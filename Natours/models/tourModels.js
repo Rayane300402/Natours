@@ -11,7 +11,7 @@ const toursSchema = new mongoose.Schema(
       trim: true,
       maxlength: [40, 'A tour name must have less or equal than 40 characters'],
       minlength: [10, 'A tour name must have more or equal than 10 characters'],
-      validate: [validator.isAlpha, 'Tour name must only contain characters'],
+      // validate: [validator.isAlpha, 'Tour name must only contain characters'],
     },
     slug: String,
     duration: {
@@ -78,6 +78,37 @@ const toursSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    startLocation: {
+      //GeoJSON
+      type: {
+        type: String,
+        default: 'Point',
+        enum: ['Point'],
+
+      },
+      coordinates: [Number],
+      address: String,
+      description: String,
+    },
+    locations: [
+      {
+        type:{
+          type: String,
+          default: 'Point',
+          enum: ['Point'],
+        },
+        coordinates: [Number],
+        address: String,
+        description: String,
+        day: Number,
+      }
+    ],
+    guides: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
+      }
+    ]
   },
   {
     toJSON: { virtuals: true },
@@ -85,43 +116,84 @@ const toursSchema = new mongoose.Schema(
   }
 );
 
-toursSchema.virtual('durationWeeks').get(function () {
+
+// tourSchema.index({ price: 1 });
+toursSchema.index({ price: 1, ratingsAverage: -1 });
+toursSchema.index({ slug: 1 });
+toursSchema.index({ startLocation: '2dsphere' });
+
+toursSchema.virtual('durationWeeks').get(function() {
   return this.duration / 7;
 });
 
-//Document middleware: runs before .save() and .create() but not on .insertMany()
-toursSchema.pre('save', function (next) {
+// Virtual populate
+toursSchema.virtual('reviews', {
+  ref: 'Review',
+  foreignField: 'tour',
+  localField: '_id'
+});
+
+// DOCUMENT MIDDLEWARE: runs before .save() and .create()
+toursSchema.pre('save', function(next) {
   this.slug = slugify(this.name, { lower: true });
   next();
 });
 
-// toursSchema.pre('save', function(next){
+
+// tourSchema.pre('save', async function(next) {
+//   const guidesPromises = this.guides.map(async id => await User.findById(id));
+//   this.guides = await Promise.all(guidesPromises);
+//   next();
+// });
+
+// tourSchema.pre('save', function(next) {
 //   console.log('Will save document...');
 //   next();
-// })
+// });
 
-// toursSchema.post('save', function(doc, next){
+// tourSchema.post('save', function(doc, next) {
 //   console.log(doc);
 //   next();
-// })
+// });
+
 
 //Query middleware : hide secret tours , all tours where secret tour is not true are shown, this middleware will run before every find query : getAll and getOne
-toursSchema.pre(/^find/, function (next) {
+toursSchema.pre(/^find/, function(next) {
   this.find({ secretTour: { $ne: true } });
+
+  this.start = Date.now();
   next();
 });
 
-toursSchema.post(/^find/, function (docs, next) {
-  console.log(docs);
+toursSchema.pre(/^find/, function(next) {
+  this.populate({
+    path: 'guides',
+    select: '-__v -passwordChangedAt'
+  });
+
   next();
 });
+
+toursSchema.post(/^find/, function(docs, next) {
+  console.log(`Query took ${Date.now() - this.start} milliseconds!`);
+  next();
+});
+// toursSchema.pre(/^find/, function (next) {
+//   this.find({ secretTour: { $ne: true } });
+//   next();
+// });
+
+// toursSchema.post(/^find/, function (docs, next) {
+//   console.log(docs);
+//   next();
+// });
 
 //Aggregation middleware : hide secret tours , all tours where secret tour is not true are shown, this middleware will run before every aggregation query : getTourStats and getMonthlyPlan
 
-toursSchema.pre('aggregate', function (next) {
-  this.pipeline().unshift({ $match: { secretTour: { $ne: true } } });
-  next();
-});
+// toursSchema.pre('aggregate', function (next) {
+//   this.pipeline().unshift({ $match: { secretTour: { $ne: true } } });
+//   next();
+// });
 
 //To create a model out of the schema + add data in the collection, will always run everytime you reload the server
 const Tour = mongoose.model('Tour', toursSchema);
